@@ -272,12 +272,12 @@ function redis__get_resp(c, resp,   resp_, oldRS_, ln_,
     oldRS_ = RS
     RS = "\r\n"
 
-    debug(sprintf("receiving..."))
+    #debug(sprintf("receiving..."))
 
     c |& getline ln_
     debug(sprintf("received: |%s|", ln_))
 
-    _REDIS_["resp"] = ln_
+    #_REDIS_["resp"] = ln_
     first_ = substr(ln_, 1, 1)
 
     delete resp
@@ -361,6 +361,60 @@ function redis_command(conn, resp, num,
 
     return i_
 }
+
+
+function redis_resp(conn, resp) {
+    return redis__get_resp(conn, resp)
+}
+
+function redis_pipe(conn, nreq, num, 
+                    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, 
+                    v_, c_, oldRS_, i_) {
+    oldRS_ = ORS
+    ORS = "\r\n"
+    c_ = args2cmdv(v_, num, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p)
+
+    if (_REDIS_DEBUG) {
+        for (i_ = 0; i_ < c_; i_++) {
+            debug(sprintf("REQ[%d] = |%s|", i_, v_[i_]))
+        }
+    }
+
+    print array2str(v_, "\r\n") |& conn
+
+    ORS = oldRS_
+
+    return nreq + 1
+}
+
+function redis_flush(conn, reqs) {
+    if (reqs[0] != "") {
+        printf "%s", reqs[0] |& conn
+        reqs[0] = ""
+    }
+}
+
+function redis_append(conn, reqs, num, 
+                      a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, 
+                      v_, c_, i_) {
+    c_ = args2cmdv(v_, num, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p)
+
+    if (_REDIS_DEBUG) {
+        for (i_ = 0; i_ < c_; i_++) {
+            debug(sprintf("REQ[%d] = |%s|", i_, v_[i_]))
+        }
+    }
+
+    reqs[0] = (reqs[0] array2str(v_, "\r\n") "\r\n")
+    reqs[1]++
+
+    if (reqs[1] % 512 == 0) {
+        printf "%s", reqs[0] |& conn
+        reqs[0] = ""
+    }
+    return reqs[1]
+}
+
 
 BEGIN {
     if ("REDIS_DEBUG" in ENVIRON)

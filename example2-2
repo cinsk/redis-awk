@@ -1,0 +1,27 @@
+#!/usr/bin/awk -f
+
+# line count, to experiment redis_pipe()/redis_resp()
+
+@include "redis.awk"
+
+BEGIN {
+    # redis = redis_open("redis.hello.org", 6379)
+    REDIS = redis_open()        # Use env. variable REDIS_ENDPOINT or
+                                # the default, "localhost:6379"
+    NREQ = 0
+}
+
+{
+    NREQ = redis_pipe(REDIS, NREQ, 2, "INCR", "count")
+}
+
+END {
+    for (i = 0; i < NREQ; i++)
+        redis_resp(REDIS, resp)
+
+    redis_command(REDIS, resp, 2, "GET", "count")
+    print resp[0]
+
+    redis_close(REDIS)
+}
+

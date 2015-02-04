@@ -1,0 +1,23 @@
+#!/usr/bin/awk -f
+
+# line count, to get the baseline performance before pipelining
+
+@include "redis.awk"
+
+BEGIN {
+    # redis = redis_open("redis.hello.org", 6379)
+    REDIS = redis_open()        # Use env. variable REDIS_ENDPOINT or
+                                # the default, "localhost:6379"
+}
+
+{
+    redis_command(REDIS, resp, 2, "INCR", "count")
+}
+
+END {
+    redis_command(REDIS, resp, 2, "GET", "count")
+    print resp[0]
+
+    redis_close(REDIS)
+}
+

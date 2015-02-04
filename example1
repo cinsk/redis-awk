@@ -1,5 +1,7 @@
 #!/usr/bin/awk -f
 
+# simple demonstration of redis.awk API
+
 @include "redis.awk"
 
 BEGIN {
