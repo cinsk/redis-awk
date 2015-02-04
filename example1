@@ -1,0 +1,25 @@
+#!/usr/bin/awk -f
+
+@include "redis.awk"
+
+BEGIN {
+    # redis = redis_open("redis.hello.org", 6379)
+    REDIS = redis_open()        # Use env. variable REDIS_ENDPOINT or
+                                # the default, "localhost:6379"
+    print "REDIS: ", REDIS
+
+    redis_command(REDIS, resp, 3, "SET", "name", "Seong-Kook Shin")
+    redis_command(REDIS, resp, 8, "HMSET", "pet", 
+                  "name", "Ping",
+                  "age", 3,
+                  "species", "lovebird")
+
+    redis_command(REDIS, resp, 2, "GET", "name")
+    redis_dump(resp)            # Dump the response to stderr
+
+    redis_command(REDIS, resp, 2, "HGETALL", "pet")
+    redis_dump(resp)            # Dump the response to stderr
+
+    redis_close(REDIS)
+}
+
