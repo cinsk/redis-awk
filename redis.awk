@@ -171,42 +171,28 @@ function args2cmdv(array, num, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p,
     return i_
 }
 
-# redis__get_endpoint()
+# redis_open(HOST = "localhost", PORT = 6379)
 #
-# Get the endpoint string of the redis server.
+# Return the connection string of the Redis server; Consider this as
+# opening connection to the Redis server.  You may close the
+# connection with redis_close().
 #
-# the endpoint string has the form, "HOST:PORT", and read from the
-# environment variable REDIS_ENDPOINT.  If not available,
-# "localhost:6379" is used as the default.
-function redis__get_endpoint(    m, sock) {
-    if ("REDIS_ENDPOINT" in ENVIRON)
-        sock=ENVIRON["REDIS_ENDPOINT"]
-    else
-        sock="localhost:6379"
-
-    if (!match(sock, /^([^:]+)(:([0-9]+))?$/, m)) {
-        error(1, "invalid redis endpoint: " sock)
-        exit 1
-    }
-
-    return sprintf("/inet/tcp/0/%s/%s", m[1], m[3] ? m[3] : "6379")
-}
-
+# HOST and PORT will be used for the endpoint to the Redis server.
+# "localhost" and 6379 will be used as the default values, if either of
+# HOST and PORT is not provided.
+#
+# Note that the environment variable, REDIS_ENDPOINT will override
+# HOST and PORT.  It should have the value in the form of "HOST:PORT".
+#
 function redis_open(host, port) {
-    if (length(host) == 0) {
-        if ("REDIS_ENDPOINT" in ENVIRON) {
-            sock=ENVIRON["REDIS_ENDPOINT"]
-
-            if (!match(sock, /^([^:]+)(:([0-9]+))?$/, m))
-                return ""
-            else {
-                sock = sprintf("/inet/tcp/0/%s/%s", m[1], m[3] ? m[3] : "6379")
-            }
-        }
-        else
-            sock = "/inet/tcp/0/localhost/6379"
+    if ("REDIS_ENDPOINT" in ENVIRON) {
+        if (match(ENVIRON["REDIS_ENDPOINT"], /^([^:]+)(:([0-9]+))?$/, m))
+            sock = sprintf("/inet/tcp/0/%s/%s", m[1], m[3] ? m[3] : "6379")
     }
-    else {
+
+    if (length(sock) == 0) {
+        if (length(host) == 0)
+            host = "localhost"
         if (length(port) == 0)
             port = 6379
         sock = sprintf("/inet/tcp/0/%s/%d", host, port)
@@ -214,6 +200,10 @@ function redis_open(host, port) {
     return sock
 }
 
+# redis_close(CONN)
+#
+# Close the connection to the redis server.
+#
 function redis_close(conn) {
     close(conn)
 }
@@ -224,6 +214,7 @@ function redis_close(conn) {
 #
 # If STREAM is not provided, "/dev/stderr" will be used by default
 # LEV is the indentation level, and the default value will be 0.
+#
 function redis_dump(resp, stream, lev,    rsp_, i_) {
     if (length(lev) == 0)
         lev = 0
@@ -259,7 +250,9 @@ function redis_dump(resp, stream, lev,    rsp_, i_) {
 #
 # Get the response from the stream, CONN.
 #
-# RESP will be set by this function.
+# RESP will be set by this function to the response form the Redis
+# server.  RESP should be either an uninitialized variable name or the
+# name of the array name, which will be erased by this function.
 #
 # resp[0] contains the response from the redis server, and
 # resp[1] has the type of resp[0], in one of these strings:
@@ -267,17 +260,18 @@ function redis_dump(resp, stream, lev,    rsp_, i_) {
 #  - "e": error type
 #  - "i": integer type
 #  - "a": array type
-function redis__get_resp(c, resp,   resp_, oldRS_, ln_, 
+#
+function redis__get_resp(c, resp,   resp_, oldRS_, ln_, ret_,
                                     first_, i_, size_, read_) {
     oldRS_ = RS
     RS = "\r\n"
 
-    #debug(sprintf("receiving..."))
-
-    c |& getline ln_
-    debug(sprintf("received: |%s|", ln_))
-
-    #_REDIS_["resp"] = ln_
+    ret_ = (c |& getline ln_)
+    if (ret_ <= 0) {           # EOF(0) or an error(-1) 
+        debug(sprintf("redis__get_resp: getline returns %d, ERRNO=%s",
+                      ret_, ERRNO))
+        return 0
+    }
     first_ = substr(ln_, 1, 1)
 
     delete resp
@@ -322,17 +316,21 @@ function redis__get_resp(c, resp,   resp_, oldRS_, ln_,
         else
             resp[1] = "s"
 
-
-        while (c |& getline ln_) {
+        while ((ret_ = (c |& getline ln_)) > 0) {
             resp[0] = (resp[0] ln_)
             read_ += length(ln_)
 
-            if (read_ >= size_)
-                break
+            if (read_ >= size_) {
+                RS = oldRS_
+                return 1
+            }
             resp[0] = (resp[0] RS)
             read_ += length(RS)
         }
-        break
+        debug(sprintf("redis__get_resp: getline returns %d, ERRNO=%s",
+                      ret_, ERRNO))
+        return 0;
+        
     default:
         error(1, sprintf("unrecognized RESP, %0o", first_))
     }
@@ -341,6 +339,23 @@ function redis__get_resp(c, resp,   resp_, oldRS_, ln_,
 }
 
 
+# redis_command(CONN, [out] RESP, NARGS, ARG...)
+# 
+# Execute redis command in ARG... and set RESP to the response from the
+# Redis server.  NARGS must be set to the number of ARG...
+#
+# RESP should be either a name of uninitialized variable or a name of
+# an array variable, which will be erased by this function.  Using
+# existing scala variable will raise an error.
+#
+# When this function is finished, RESP[0] will be set to the value of
+# the returned value, and RESP[1] will be set to the type of the
+# RESP[0], as one of "i", "s", "a", or "e".  These means an integer, a
+# string, an array, and an error respectively.
+#
+# NARGS is an unfortunate remnant, because I couldn't find the better
+# design to implement a function with variable-length parameters.
+#
 function redis_command(conn, resp, num, 
                        a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, 
                        v_, c_, oldRS_, i_) {
@@ -362,11 +377,17 @@ function redis_command(conn, resp, num,
     return i_
 }
 
-
-function redis_resp(conn, resp) {
-    return redis__get_resp(conn, resp)
-}
-
+# redis_pipe(CONN, NREQ, NARG, ARG...)
+# 
+# Send the redis request in ARG..., and not waiting for the response.
+# NARG should be set to the number of ARG.   NREQ is the number of
+# response that should be received.   Normally when you call redis_pipe()
+# first time, NREQ is zero.
+#
+# This function will return the updated NREQ, that is, the number of
+# response that should be received.  To receive the response, you need
+# to call redis_resp() one or multiple times.
+#
 function redis_pipe(conn, nreq, num, 
                     a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, 
                     v_, c_, oldRS_, i_) {
@@ -386,6 +407,11 @@ function redis_pipe(conn, nreq, num,
 
     return nreq + 1
 }
+
+function redis_resp(conn, resp) {
+    return redis__get_resp(conn, resp)
+}
+
 
 function redis_flush(conn, reqs) {
     if (reqs[0] != "") {
