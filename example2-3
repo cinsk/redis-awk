@@ -18,7 +18,7 @@ BEGIN {
 END {
     redis_flush(REDIS, REQS)
 
-    for (i = 0; i < REQS[1]; i++)
+    for (i = 0; i < REQS["nreq"]; i++)
         redis_resp(REDIS, resp)
 
     redis_command(REDIS, resp, 2, "GET", "count")

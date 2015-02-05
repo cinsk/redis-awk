@@ -80,18 +80,19 @@ function array2str(array, sep,     s_, i_) {
 }
 
 
-function args2cmdv(array, num, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, 
-                    i_) {
-    delete array
+function args2cmdv(array, idx, num,
+                   a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, 
+                   i_) {
+    if (idx == 0)
+        delete array
 
     if (num == 0 || num == "0")
         return 0;
 
     if (num > 0) {
-        i_ = 0
+        i_ = idx
         array[i_++] = ("*" num)
-
-        num = 1 + num * 2
+        num = 1 + num * 2 + idx
         for (; i_ < num; ) {
             array[i_++] = ("$" length(a))
             array[i_++] = a;  if (i_ >= num) break
@@ -128,7 +129,7 @@ function args2cmdv(array, num, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p,
         }
     }
     else {
-        i_ = 0
+        i_ = idx
         array[i_++] = "*"       # bogus
 
         while (1) {
@@ -166,7 +167,7 @@ function args2cmdv(array, num, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p,
             array[i_++] = ("$" length(p));  array[i_++] = p;
             break
         }
-        array[0] = ("*" (i - 1)/2)
+        array[idx] = ("*" (i - 1)/2)
     }
     return i_
 }
@@ -361,7 +362,7 @@ function redis_command(conn, resp, num,
                        v_, c_, oldRS_, i_) {
     oldRS_ = ORS
     ORS = "\r\n"
-    c_ = args2cmdv(v_, num, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p)
+    c_ = args2cmdv(v_, 0, num, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p)
 
     if (_REDIS_DEBUG) {
         for (i_ = 0; i_ < c_; i_++) {
@@ -393,7 +394,7 @@ function redis_pipe(conn, nreq, num,
                     v_, c_, oldRS_, i_) {
     oldRS_ = ORS
     ORS = "\r\n"
-    c_ = args2cmdv(v_, num, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p)
+    c_ = args2cmdv(v_, 0, num, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p)
 
     if (_REDIS_DEBUG) {
         for (i_ = 0; i_ < c_; i_++) {
@@ -408,37 +409,66 @@ function redis_pipe(conn, nreq, num,
     return nreq + 1
 }
 
+# redis_resp(CONN, RESP)
+#
+# Get the response from the CONNection.
+#
+# Be sure to call redis_resp() the same times that you called
+# redis_pipe().  The returned value from last redis_pipe() will
+# be helpful to decide how many times that you need to redis_resp().
+# For example:
+#
+#     nreq = redis_pipe(conn, nreq, ...)
+#     for (i = 0; i < nreq; i++)
+#         redis_resp(conn, resp)
+#
 function redis_resp(conn, resp) {
     return redis__get_resp(conn, resp)
 }
 
 
-function redis_flush(conn, reqs) {
-    if (reqs[0] != "") {
-        printf "%s", reqs[0] |& conn
-        reqs[0] = ""
+function redis_flush(conn, reqs,      i_, t_) {
+    if (reqs["size"] > 0) {
+        for (i_ = 0; i_ < reqs["size"]; i_++) {
+            # TODO: is it necessary to check the return value of "|& conn"?
+            printf "%s\r\n", reqs[i_] |& conn
+        }
+        t_ = reqs["nreq"]
+        delete reqs
+        reqs["nreq"] = t_
+        reqs["size"] = 0
     }
+    return reqs["nreq"]
 }
 
 function redis_append(conn, reqs, num, 
                       a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, 
-                      v_, c_, i_) {
-    c_ = args2cmdv(v_, num, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p)
-
+                      v_, c_, i_, t_) {
+    if (!("size" in reqs)) {
+        reqs["size"] = 0
+        reqs["nreq"] = 0
+    }
+    c_ = args2cmdv(reqs, reqs["size"], num,
+                   a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p)
     if (_REDIS_DEBUG) {
-        for (i_ = 0; i_ < c_; i_++) {
-            debug(sprintf("REQ[%d] = |%s|", i_, v_[i_]))
+        for (i_ = reqs["size"]; i_ < c_; i_++) {
+            debug(sprintf("REQ[%d] = |%s|", i_, reqs[i_]))
         }
     }
-
-    reqs[0] = (reqs[0] array2str(v_, "\r\n") "\r\n")
-    reqs[1]++
-
-    if (reqs[1] % 512 == 0) {
-        printf "%s", reqs[0] |& conn
-        reqs[0] = ""
+    reqs["size"] = c_
+    reqs["nreq"]++
+    
+    if (reqs["size"] >= 10) {
+        for (i_ = 0; i_ < reqs["size"]; i_++) {
+            # TODO: is it necessary to check the return value of "|& conn"?
+            printf "%s\r\n", reqs[i_] |& conn
+        }
+        t_ = reqs["nreq"]
+        delete reqs
+        reqs["nreq"] = t_
+        reqs["size"] = 0
     }
-    return reqs[1]
+    return reqs["nreq"]
 }
 
 
