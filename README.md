@@ -26,4 +26,21 @@ Note that you should provide the number of arguments, ARGC to *redis_command()*.
 
     redis_command(conn, resp, 3, "SET", "KEY", "VAL")
 
-Look at the example files for the demonstration.
+Look at the [example1](https://github.com/cinsk/redis-awk/blob/master/example2-3) file for the demonstration.
+
+Pipeline
+--------
+
+Currently, I'm experimental several implementaion choices.
+
+Look at the example file especially, [example2-3](https://github.com/cinsk/redis-awk/blob/master/example2-3). Basically, you'll canned the Redis commands using redis_append(), then call redis_flush() to send to the Redis server, then, call redis_resp() multiple times exactly the same numbers that you called redis_append().
+
+     redis_append(conn, reqs, 2, "GET", "name")
+     redis_append(conn, reqs, 2, "INCR", "count")
+     ...
+     redis_flush(conn, reqs)
+     
+     for (i = 0; i < reqs["nreq"]; i++) {
+       redis_resp(conn, resp)    # Get response Nth command
+       # process 'resp' if needed
+     }
