@@ -5,25 +5,26 @@
 @include "redis.awk"
 
 BEGIN {
-    # redis = redis_open("redis.hello.org", 6379)
-    REDIS = redis_open()        # Use env. variable REDIS_ENDPOINT or
-                                # the default, "localhost:6379"
+    # ctx = redis_open("redis.hello.org", 6379)
+    ctx = redis_open()        # Use env. variable REDIS_ENDPOINT or
+                              # the default, "localhost:6379"
 }
 
 {
-    redis_append(REDIS, REQS, 2, "INCR", "count")
+    redis_append(ctx, REQS, 2, "INCR", "count")
     #print REQS[0]
 }
 
 END {
-    redis_flush(REDIS, REQS)
+    redis_flush(ctx, REQS)
 
-    for (i = 0; i < REQS["nreq"]; i++)
-        redis_resp(REDIS, resp)
+    # for (i = 0; i < REQS["nreq"]; i++)
+    #     redis_resp(ctx, resp)
+    redis_ignore_resp(ctx, REQS)
 
-    redis_command(REDIS, resp, 2, "GET", "count")
+    redis_command(ctx, resp, 2, "GET", "count")
     print resp[0]
 
-    redis_close(REDIS)
+    redis_close(ctx)
 }
 

@@ -11,7 +11,7 @@ function error(code, msg, stream) {
 
 
 function debug(msg, stream) {
-    if (_REDIS_DEBUG) {
+    if (REDIS["debug"]) {
         if (length(stream) == 0)
             stream = "/dev/stderr"
 
@@ -414,9 +414,9 @@ function redis_pipe(conn, nreq, num,
 # Get the response from the CONNection.
 #
 # Be sure to call redis_resp() the same times that you called
-# redis_pipe().  The returned value from last redis_pipe() will
-# be helpful to decide how many times that you need to redis_resp().
-# For example:
+# redis_pipe() or redis_append().  The returned value from last
+# redis_pipe() will be helpful to decide how many times that you need
+# to redis_resp().  For example:
 #
 #     nreq = redis_pipe(conn, nreq, ...)
 #     for (i = 0; i < nreq; i++)
@@ -426,7 +426,12 @@ function redis_resp(conn, resp) {
     return redis__get_resp(conn, resp)
 }
 
-
+# redis_flush(CONN, [in/out] REQS)
+#
+# Flush the remaining Redis commands that have not sent to the redis server.
+# You'll need to call this function after the last redis_append() call.
+# See redis_append() for the usage.
+#
 function redis_flush(conn, reqs,      i_, t_) {
     if (reqs["size"] > 0) {
         for (i_ = 0; i_ < reqs["size"]; i_++) {
@@ -441,6 +446,30 @@ function redis_flush(conn, reqs,      i_, t_) {
     return reqs["nreq"]
 }
 
+# redis_append(CONN, [in/out] REQS, NARG, ARG...)
+#
+# Create and optionally send one or more pipelined Redis command(s).
+# Unlike redis_command(), this function will not wait for the response
+# from the server, but just send the request specified by ARG... and
+# NARG.  You'll need to retrieve the response with redis_resp() or
+# redis_ignore_resp().
+#
+# You'll pass an empty array to REQS unless you have the array value
+# from the previous redis_append().  See redis_command() for the meaning
+# of other parameters, such as CONN, NARG, and ARG...
+# 
+# Typical usage of this function looks like this:
+#
+#     redis_append(conn, reqs, 2, "GET", "name")
+#     redis_append(conn, reqs, 2, "INCR", "count")
+#     ...
+#     redis_flush(conn, reqs)
+#
+#     for (i = 0; i < reqs["nreq"]; i++) {
+#       redis_resp(conn, resp)    # Get response Nth command
+#       # process 'resp' if needed
+#     }
+#
 function redis_append(conn, reqs, num, 
                       a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, 
                       v_, c_, i_, t_) {
@@ -458,7 +487,7 @@ function redis_append(conn, reqs, num,
     reqs["size"] = c_
     reqs["nreq"]++
     
-    if (reqs["size"] >= 10) {
+    if (reqs["size"] >= REDIS["pipesize"]) {
         for (i_ = 0; i_ < reqs["size"]; i_++) {
             # TODO: is it necessary to check the return value of "|& conn"?
             printf "%s\r\n", reqs[i_] |& conn
@@ -471,58 +500,30 @@ function redis_append(conn, reqs, num,
     return reqs["nreq"]
 }
 
+# redis_ignore_resp(CONN, REQS)
+#
+# If you don't care about the response from the pipelined commands of
+# redis_append(), you may call this function to receive responses and
+# to ignore them.
+#
+function redis_ignore_resp(conn, reqs,     i_, resp_, n_) {
+    n_ = reqs["nreq"]
+    for (i_ = 0; i_ < n_; i_++) {
+        if (!redis_resp(ctx, resp_))
+            return 0
+    }
+    delete resp
+    return 1
+}
+
 
 BEGIN {
     if ("REDIS_DEBUG" in ENVIRON)
-        _REDIS_DEBUG = 1
+        REDIS["debug"] = 1
     else
-        _REDIS_DEBUG = 0
+        REDIS["debug"] = 0
 
-
-    # REDIS = redis__get_endpoint()
-    #redis_select(REDIS, 0)
-    #print "result: ", _REDIS_["resp"]
-    #print "error: ", _REDIS_["error"]
-
-    # redis_command(REDIS, resp, 3, "expire", "foo", 100)
-    # redis_dump(resp)
-    # 
-    # redis_command(REDIS, resp, 2, "keys", "*")
-    # redis_dump(resp)
-    # 
-    # exit 0
-
-    # print "redis: ", REDIS
-    # print "get foo" |& REDIS
-    # print "huh"
-    # redis__get_resp(REDIS, resp)
-    # print "huh"
-    # redis_dump(resp)
-    # print "huh"
-    # 
-    # for (k in resp) {
-    #     printf "resp[%s]: %s\n", k, resp[k]
-    # }
-
-    # print "smembers myset" |& REDIS
-    #print "get foo" |& REDIS
-    # redis__get_resp(REDIS, resp)
-    # 
-    # redis_dump(resp)
-    # for (k in resp[0]) {
-    #     printf "resp[%s]: %s\n", k, resp[0][k]
-    # }
-
-    # print "--"
-    # len = args2cmdv(ar, 3, "expire", "foo", "32")
-    # for (i = 0; i < len; i++) {
-    #     printf "ar[%d] = |%s|\n", i, ar[i]
-    # }
-    # print "--"
-    # 
-    # len = args2cmdv(ar, 2, "expire",  32)
-    # for (i = 0; i < len; i++) {
-    #     printf "ar[%d] = |%s|\n", i, ar[i]
-    # }
-
+    REDIS["pipesize"] = 64
+    if ("REDIS_PIPESIZE" in ENVIRON)
+        REDIS["pipesize"] = strtonum(ENVIRON["REDIS_PIPESIZE"])
 }
