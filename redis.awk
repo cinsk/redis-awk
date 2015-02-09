@@ -428,9 +428,9 @@ function redis_resp(conn, resp) {
 
 # redis_flush(CONN, [in/out] REQS)
 #
-# Flush the remaining Redis commands that have not sent to the redis server.
-# You'll need to call this function after the last redis_append() call.
-# See redis_append() for the usage.
+# Flush the remaining Redis commands that have not sent to the redis
+# server.  You'll need to call this function after the last
+# redis_append() call.  See redis_append() for the usage.
 #
 function redis_flush(conn, reqs,      i_, t_) {
     if (reqs["size"] > 0) {
@@ -469,6 +469,13 @@ function redis_flush(conn, reqs,      i_, t_) {
 #       redis_resp(conn, resp)    # Get response Nth command
 #       # process 'resp' if needed
 #     }
+#
+# Currently, redis_append() will convert the received Redis command to
+# the RESP lines of the Redis protocol, then it will store the
+# converted RESP into REQS argument.  Basically, the number of RESP
+# lines matches NARG+1.  If RESP lines exceeded REDIS["pipesize"],
+# redis_append() will flush REQS, sending the RESP lines to the
+# socket.
 #
 function redis_append(conn, reqs, num, 
                       a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, 
